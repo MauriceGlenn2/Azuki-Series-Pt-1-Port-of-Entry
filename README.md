@@ -551,7 +551,6 @@ group at `7:09:53 PM UTC` — five seconds later. All four commands were initiat
 
 <img width="1058" height="417" alt="image" src="https://github.com/user-attachments/assets/ca1540a6-7185-4692-ae0f-39821c798c4d" />
 
-
 ---
 
 ## Analysis
@@ -582,7 +581,135 @@ tools, and re-accessing all files on the device.
 **MITRE ATT&CK:** `T1078.003` — Valid Accounts: Local Accounts
 
 ---
+<br><br><br>
+# Query 12: Lateral Movement — Secondary Target
 
+A KQL query was executed against `DeviceNetworkEvents` for the November 19–20, 2025 timeframe,
+targeting the compromised IT admin workstation `azuki-sl`. The query filtered
+`InitiatingProcessCommandLine` for `mstsc.exe` and `cmdkey` — the native Windows RDP client
+and credential manager utility — to identify whether the attacker used `azuki-sl` as a
+pivot point to move laterally to other machines on the Azuki internal network. Results
+were sorted ascending by `TimeGenerated` to establish the sequence of lateral movement.
+
+---
+
+## Key Findings
+
+The results confirm **one successful RDP lateral movement event** from **azuki-sl** to
+an internal host at `7:10:42 PM UTC on November 19, 2025` — **34 minutes after initial
+access** and **2 minutes after the `support` backdoor account was created**. The connection
+was made using `mstsc.exe` directly targeting `10.1.0.188` over port `3389`.
+
+<img width="1359" height="325" alt="image" src="https://github.com/user-attachments/assets/bad9a358-f3f5-4716-8782-8881af2e035c" />
+
+---
+
+## Analysis
+
+The command `"mstsc.exe" /v:10.1.0.188` is a direct, deliberate RDP connection to a
+specific internal host. The `/v:` flag specifies the exact target — this was not a
+background or incidental connection but a purposeful pivot to a named internal machine.
+
+The target `10.1.0.188` sits within the same `10.1.0.0/24` subnet as `azuki-sl`.
+This subnet would have been fully mapped by the `arp -a` reconnaissance command
+executed at `7:04 PM` — 6 minutes before this lateral movement event — confirming
+that network reconnaissance directly informed the attacker's choice of secondary target.
+
+The connection succeeded over **port 3389**, confirming that RDP is permitted between
+internal hosts on the Azuki network and that the attacker possessed valid credentials
+— most likely harvested from LSASS memory by Mimikatz at `7:08 PM` — sufficient to
+authenticate to `10.1.0.188`.
+
+The timing places this lateral movement as the **final offensive action** before the
+attacker began their cleanup routine, clearing event logs at `7:11 PM`. Having already
+exfiltrated `export-data.zip` to Discord and established persistence via both a
+scheduled task and the `support` backdoor account on `azuki-sl`, the move to
+`10.1.0.188` suggests the attacker was expanding their foothold across the Azuki
+network beyond the initial point of compromise.
+
+
+**MITRE ATT&CK:** `T1021.001` — Remote Services: Remote Desktop Protocol  
+**MITRE ATT&CK:** `T1078` — Valid Accounts *(stolen credentials used for lateral movement)*  
+**MITRE ATT&CK:** `T1550.002` — Use Alternate Authentication Material: Pass the Hash
+
+---
+<br><br><br>
+# Incident Conclusion Part 1 — Azuki Import/Export | 梓貿易株式会社
+
+## Summary
+
+On November 19, 2025, an attacker gained unauthorised access to Azuki Import/Export's
+IT admin workstation `azuki-sl` via an RDP connection from `88.97.178.12` using the
+compromised account `kenji.sato`. Within 33 minutes the attacker executed a fully
+scripted attack chain, driven by a PowerShell script `wupdate.ps1`, that covered
+every stage of the intrusion lifecycle.
+
+---
+
+## Attack Chain
+
+After gaining access the attacker performed network reconnaissance using `arp -a`,
+created a hidden staging directory at `C:\ProgramData\WindowsCache`, and disabled
+Windows Defender scanning for key file extensions. Tools including a renamed Mimikatz
+binary were downloaded from a C2 server at `78.141.196.6` using `certutil.exe`.
+Credentials were dumped from LSASS memory using `sekurlsa::logonpasswords`, and
+collected data was archived into `export-data.zip` and exfiltrated to an
+attacker-controlled Discord channel via `curl.exe`.
+
+To ensure persistent access the attacker created a scheduled task running a malicious
+`svchost.exe` as SYSTEM at 2:00 AM daily, and created a local administrator backdoor
+account named `support`. Before disconnecting, all three primary Windows event logs
+were wiped using `wevtutil.exe` in an attempt to destroy forensic evidence. The
+attacker then moved laterally to a second internal host at `10.1.0.188` via RDP,
+indicating the compromise extends beyond `azuki-sl`.
+
+---
+
+## Full Timeline
+
+| Time [UTC] | Stage | Action |
+|---|---|---|
+| 6:36 PM | Initial Access | RDP logon from `88.97.178.12` via `kenji.sato` |
+| 6:49 PM | Defence Evasion | Defender exclusions added — `.exe`, `.ps1`, `.bat` |
+| 7:04 PM | Discovery | Network reconnaissance via `arp -a` |
+| 7:05 PM | Defence Evasion | Staging directory hidden — `attrib +h +s` |
+| 7:06 PM | Tool Transfer | Tools downloaded via `certutil.exe` from `78.141.196.6` |
+| 7:07 PM | Persistence | Scheduled task `Windows Update Check` created as SYSTEM |
+| 7:08 PM | Credential Access | Credentials dumped via `sekurlsa::logonpasswords` |
+| 7:08 PM | Collection | Data archived into `export-data.zip` |
+| 7:09 PM | Exfiltration | `export-data.zip` uploaded to Discord via `curl.exe` |
+| 7:09 PM | Persistence | Backdoor account `support` added to Administrators |
+| 7:10 PM | Lateral Movement | RDP connection to internal host `10.1.0.188` |
+| 7:11 PM | Anti-Forensics | Security, System, and Application event logs wiped |
+
+---
+
+## Compromised Assets
+
+| Asset | Type | Status |
+|---|---|---|
+| `azuki-sl` | IT admin workstation | Fully compromised |
+| `kenji.sato` | User account | Credentials stolen |
+| `support` | Backdoor account | Created by attacker — delete immediately |
+| `10.1.0.188` | Internal host | Lateral movement target — investigate immediately |
+| `C:\ProgramData\WindowsCache` | Staging directory | Hidden — forensically preserve |
+| `export-data.zip` | Data archive | Exfiltrated — in attacker's possession |
+
+---
+
+## Key Indicators of Compromise
+
+| Indicator | Type |
+|---|---|
+| `88.97.178.12` | Attacker source IP |
+| `78.141.196.6:8080` | C2 server |
+| `162.159.135.232` | Discord exfiltration endpoint |
+| `C:\ProgramData\WindowsCache\` | Staging directory |
+| `C:\Users\kenji.sato\AppData\Local\Temp\wupdate.ps1` | Attack orchestration script |
+| `Windows Update Check` | Malicious scheduled task |
+| `support` | Backdoor local administrator account |
+
+---
 
 
 
