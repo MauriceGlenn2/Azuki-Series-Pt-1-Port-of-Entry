@@ -429,6 +429,107 @@ during the session, and potentially configuration data from the IT admin worksta
 **MITRE ATT&CK:** `T1560.001` — Archive Collected Data: Archive via Utility
 
 ---
+<br><br><br>
+# Query 9: Exfiltration — Discord as Exfiltration Channel
+
+A KQL query was executed against `DeviceNetworkEvents` for the November 19–20, 2025 timeframe,
+targeting the compromised IT admin workstation `azuki-sl`. The query filtered for outbound
+network connections to Discord URLs initiated via HTTPS, to identify whether the attacker
+used Discord's file sharing infrastructure as a covert exfiltration channel. The goal was
+to confirm whether `export-data.zip` was successfully transmitted out of the Azuki network.
+
+---
+
+## Key Findings
+
+The results confirm a **successful outbound connection to discord.com** was made from
+**azuki-sl** at `7:09:21 PM UTC on November 19, 2025` — just **23 seconds after
+export-data.zip was created** in the staging directory. The connection was initiated
+by **curl.exe** and successfully transmitted data to Discord's infrastructure over
+port 443.
+
+<img width="1616" height="342" alt="image" src="https://github.com/user-attachments/assets/019eceab-7047-469a-b139-454101ced29e" />
+---
+
+
+## Analysis
+
+**Discord as an exfiltration channel** is an increasingly common attacker technique
+for several reasons:
+
+- Discord traffic over port 443 is **indistinguishable from normal HTTPS** at the
+network level — it blends in with everyday web traffic
+- Discord is a **legitimate, widely used platform** that most organisations do not
+block at the firewall, making outbound connections to `discord.com` unremarkable
+- Discord **webhooks** allow anyone to POST files and messages to a private channel
+programmatically with a single curl command — no authentication UI, no login required
+- Files uploaded to Discord are hosted on Discord's CDN and accessible to the attacker
+from anywhere in the world via a private link
+
+**`curl.exe`** is a native Windows binary available on all modern Windows systems,
+requiring no download and raising no alerts by process name alone. Its use here is
+another Living Off The Land technique — the attacker exfiltrated data using a tool
+that ships with the operating system.
+
+The connection to `162.159.135.232` on port `443` resolves to Discord's content
+delivery infrastructure, confirming this was a genuine Discord upload rather than
+a spoofed domain.
+
+**MITRE ATT&CK:** `T1048.003` — Exfiltration Over Alternative Protocol: Exfiltration Over Unencrypted Non-C2 Protocol  
+**MITRE ATT&CK:** `T1567.002` — Exfiltration Over Web Service: Exfiltration to Cloud Storage  
+**MITRE ATT&CK:** `T1105` — Ingress Tool Transfer *(curl.exe as LOLBin)*
+
+---
+<br><br><br>
+# Query 10: Anti-Forensics — Log Tampering
+
+A KQL query was executed against `DeviceProcessEvents` for the November 19–20, 2025 timeframe,
+targeting the compromised IT admin workstation `azuki-sl`. The query filtered `ProcessCommandLine`
+for executions of `wevtutil.exe` — the native Windows event log management utility — excluding
+system-initiated processes to isolate attacker-driven log clearing activity. Results were
+sorted ascending by `TimeGenerated` to establish the order in which logs were wiped. The goal
+was to identify which Windows event logs were destroyed and in what sequence as part of the
+attacker's anti-forensics cleanup routine.
+
+---
+
+## Key Findings
+
+The results confirm **three Windows event logs were cleared** on **azuki-sl** within a
+seven-second window between `7:11:39 PM` and `7:11:46 PM UTC on November 19, 2025`.
+All three clearing commands were initiated by the same PowerShell script observed
+throughout the intrusion. The logs were cleared in the following order:
+
+1. `Security` — cleared first at `7:11:39 PM UTC`
+2. `System` — cleared second at `7:11:43 PM UTC`
+3. `Application` — cleared third at `7:11:46 PM UTC`
+
+<img width="1056" height="415" alt="image" src="https://github.com/user-attachments/assets/cd3518ec-ecdf-4a05-a815-2451d61168ed" />
+
+---
+
+## What Was Destroyed
+
+**Security log** — cleared first and prioritised above all others. This log contained
+every logon event, failed authentication attempt, privilege escalation, and account
+activity recorded during the intrusion. The RDP logon by `kenji.sato`, the
+`privilege::debug` request by Mimikatz, and every subsequent authenticated action
+would have been recorded here. Clearing this log was the attacker's highest priority.
+
+**System log** — cleared second. This log recorded service starts and stops, driver
+loads, and system-level changes made during the intrusion window — including any
+records of the scheduled task registration and Defender configuration changes that
+generated system events.
+
+**Application log** — cleared third. This log captured application-level activity
+including any Defender detections, application crashes, and software events generated
+during the attacker's tooling execution.
+
+
+**MITRE ATT&CK:** `T1070.001` — Indicator Removal: Clear Windows Event Logs  
+**MITRE ATT&CK:** `T1059.001` — Command and Scripting Interpreter: PowerShell
+
+---
 
 
 
