@@ -530,8 +530,58 @@ during the attacker's tooling execution.
 **MITRE ATT&CK:** `T1059.001` — Command and Scripting Interpreter: PowerShell
 
 ---
+<br><br><br>
+# Query 11: Impact — Persistence Account Creation
+
+A KQL query was executed against `DeviceProcessEvents` for the November 19–20, 2025 timeframe,
+targeting the compromised IT admin workstation `azuki-sl`. The query filtered `ProcessCommandLine`
+for `net.exe` user account creation and group membership commands to identify whether the
+attacker established a backdoor account for persistent access independent of the compromised
+`kenji.sato` credentials. Results were sorted ascending by `TimeGenerated` to establish
+the creation sequence.
+
+---
+
+## Key Findings
+
+The results confirm a **backdoor local account named `support` was created** on **azuki-sl**
+at `7:09:48 PM UTC on November 19, 2025` and immediately added to the local **Administrators**
+group at `7:09:53 PM UTC` — five seconds later. All four commands were initiated by
+**powershell.exe** as part of the same automated script observed throughout the intrusion.
+
+<img width="1058" height="417" alt="image" src="https://github.com/user-attachments/assets/ca1540a6-7185-4692-ae0f-39821c798c4d" />
 
 
+---
+
+## Analysis
+
+The account name **`support`** is deliberately chosen to appear as a legitimate
+helpdesk or IT support account. On a system belonging to a 23-person company with
+an IT admin workstation, a local account named `support` would not immediately
+raise suspicion during a routine user audit.
+
+The password applied at creation — redacted in the screenshot but captured in full
+in Defender telemetry — gives the attacker a set of credentials entirely independent
+of `kenji.sato`. Even if `kenji.sato` is disabled, credentials are reset, and the
+RDP session is terminated, the `support` account provides the attacker with a
+fully functional, password-authenticated local administrator account on `azuki-sl`.
+
+The appearance of **`net1`** alongside each `net.exe` command is expected behaviour
+— Windows internally calls `net1.exe` as a subprocess whenever `net.exe` is executed,
+meaning each user creation and group assignment generated two process events. This
+is normal Windows behaviour, not a sign of additional attacker activity.
+
+Adding `support` to the **local Administrators group** immediately after creation
+means the account has full unrestricted access to `azuki-sl` — equivalent in
+privilege to `kenji.sato` and capable of re-establishing RDP access, re-deploying
+tools, and re-accessing all files on the device.
+
+**MITRE ATT&CK:** `T1136.001` — Create Account: Local Account  
+**MITRE ATT&CK:** `T1098` — Account Manipulation  
+**MITRE ATT&CK:** `T1078.003` — Valid Accounts: Local Accounts
+
+---
 
 
 
