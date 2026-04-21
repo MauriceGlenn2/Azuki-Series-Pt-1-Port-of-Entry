@@ -1,4 +1,4 @@
-# Azuki-Series-Pt-1-Port-of-Entry (WIP)
+# Azuki-Series-Port-of-Entry
 
 # 🔴 Incident Brief — Azuki Import/Export 梓貿易株式会社
 
