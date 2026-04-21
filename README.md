@@ -366,6 +366,70 @@ this single credential dump.
 **MITRE ATT&CK:** `T1550.002` — Use Alternate Authentication Material: Pass the Hash
 
 ---
+<br><br><br>
+# Query 8: Collection — Data Staging Archive
+
+A KQL query was executed against `DeviceFileEvents` for the November 19–20, 2025 timeframe,
+targeting the compromised IT admin workstation `azuki-sl`. The query filtered for zip file
+creation and modification events to identify data archiving activity consistent with an
+attacker compressing collected files ahead of exfiltration. The goal was to locate the
+staging archive created in the hidden `WindowsCache` directory.
+
+---
+
+## Key Findings
+
+The results confirm a zip archive named **export-data.zip** was created inside the hidden
+staging directory at `7:08:58 PM UTC on November 19, 2025` — just **32 seconds after
+Mimikatz completed credential dumping**. The archive was created directly inside
+`C:\ProgramData\WindowsCache`, the attacker's concealed staging location.
+
+<img width="1357" height="578" alt="image" src="https://github.com/user-attachments/assets/d1500973-8805-4e04-a9e5-3cea66df0dfb" />
+
+---
+
+## Staging Archive Created
+
+At `7:08:58 PM UTC`, the following file creation event was recorded:
+
+| Field | Value |
+|---|---|
+| **FileName** | `export-data.zip` |
+| **FolderPath** | `C:\ProgramData\WindowsCache\export-data.zip` |
+| **ActionType** | `FileCreated` |
+| **TimeGenerated** | 11/19/2025, 7:08:58 PM UTC |
+
+The archive was created inside `C:\ProgramData\WindowsCache` — the same hidden,
+system-attributed directory established earlier in the attack. With Defender exclusions
+for `.exe`, `.ps1`, and `.bat` already in place, the contents of this directory
+were shielded from scanning at the time of archive creation.
+
+---
+
+## Analysis
+
+The name **export-data.zip** is unambiguous — the attacker made no attempt to disguise
+the purpose of this archive. Its creation 32 seconds after `sekurlsa::logonpasswords`
+completed suggests the archive was assembled programmatically as the final step of a
+scripted collection routine, immediately packaging whatever data and credentials had
+been gathered during the intrusion.
+
+The location inside `C:\ProgramData\WindowsCache` is deliberate. The directory was
+hidden with `attrib +h +s` over three minutes earlier at `7:05 PM UTC`, meaning
+`export-data.zip` was created in a folder invisible to standard filesystem browsing.
+Combined with the `.zip` extension not being covered by the Defender exclusions,
+the attacker relied on the directory's hidden status rather than AV evasion to
+conceal the archive.
+
+This file represents the **collection point** for everything the attacker gathered
+— likely including credentials dumped by Mimikatz, any documents or files accessed
+during the session, and potentially configuration data from the IT admin workstation.
+
+**MITRE ATT&CK:** `T1074.001` — Data Staged: Local Data Staging  
+**MITRE ATT&CK:** `T1560.001` — Archive Collected Data: Archive via Utility
+
+---
+
 
 
 
