@@ -306,8 +306,68 @@ all files, processes, registry keys, and network resources on `azuki-sl`.
 **MITRE ATT&CK:** `T1036.005` — Masquerading: Match Legitimate Name or Location *(Windows Update Check, svchost.exe)*  
 **MITRE ATT&CK:** `T1078.003` — Valid Accounts: Local Accounts *(SYSTEM privilege abuse)*
 
+---
+<br><br><br>
+# Query 7: Credential Access — Memory Extraction Module
+
+A KQL query was executed against `DeviceProcessEvents` for the November 19–20, 2025 timeframe,
+targeting the compromised IT admin workstation `azuki-sl`. The query filtered for executions
+of `mm.exe` — the Mimikatz credential dumping tool downloaded from the attacker's C2 server
+in the previous stage. The goal was to identify the exact Mimikatz module and command used
+to extract credentials from memory, confirming the scope of credential compromise across
+the Azuki environment.
 
 ---
+
+## Key Findings
+
+The results confirm **mm.exe was executed** on **azuki-sl** at `7:08:26 PM UTC on
+November 19, 2025` — just **65 seconds after the persistence scheduled task was created**.
+The full command line reveals the exact Mimikatz invocation used to extract credentials
+from Windows memory.
+
+<img width="1327" height="526" alt="image" src="https://github.com/user-attachments/assets/19bc3a83-948c-4f84-b27e-6d0973f67836" />
+
+---
+
+## Credential Dumping Command
+
+At `7:08:26 PM UTC`, the following command was executed:
+
+```
+"mm.exe" privilege::debug sekurlsa::logonpasswords exit
+```
+---
+
+## Analysis
+
+**`privilege::debug`** is always the first Mimikatz command in a credential dumping
+sequence. Without SeDebugPrivilege, Mimikatz cannot read LSASS process memory. Running
+as SYSTEM — which the attacker achieved via the compromised `kenji.sato` admin account
+— means this privilege is available and granted immediately.
+
+**`sekurlsa::logonpasswords`** interfaces directly with LSASS (`lsass.exe`) — the
+Windows process responsible for authentication — and extracts every credential currently
+cached in memory. This includes:
+
+- Plaintext passwords for any interactively logged-on accounts
+- NTLM hashes usable for pass-the-hash attacks without needing the plaintext password
+- Kerberos tickets usable for pass-the-ticket lateral movement
+- Cached domain credentials for any account that has authenticated on this machine
+
+On an IT admin workstation like `azuki-sl`, the LSASS cache is likely to contain
+credentials for multiple accounts beyond `kenji.sato` — including other administrators
+and potentially domain-level accounts, significantly widening the blast radius of
+this single credential dump.
+
+
+**MITRE ATT&CK:** `T1003.001` — OS Credential Dumping: LSASS Memory  
+**MITRE ATT&CK:** `T1134.001` — Access Token Manipulation: Token Impersonation *(privilege::debug)*  
+**MITRE ATT&CK:** `T1550.002` — Use Alternate Authentication Material: Pass the Hash
+
+---
+
+
 
 
 
