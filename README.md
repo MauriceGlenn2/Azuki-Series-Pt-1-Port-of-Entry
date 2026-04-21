@@ -70,8 +70,16 @@ The first event at `6:36:18 PM UTC` shows a **LogonSuccess** action from remote 
 point of initial access — an authenticated RDP session established from an external host
 directly onto the IT admin workstation.
 
+The account `kenji.sato` is an IT administrator account. Compromise of this account
+at the point of initial access would have granted the attacker elevated privileges
+across the environment from the outset, without requiring any post-exploitation
+privilege escalation steps.
+
+
 **MITRE ATT&CK:** `T1078` — Valid Accounts  
+**MITRE ATT&CK:** `T1078.002` — Valid Accounts: Domain Accounts *(credential compromise of kenji.sato)*  
 **MITRE ATT&CK:** `T1021.001` — Remote Services: Remote Desktop Protocol
 
 ---
-
+<br><br><br>
+# Query 2: DISCOVERY - Network Reconnaissance
