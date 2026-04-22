@@ -294,3 +294,67 @@ implant's host fingerprint before establishing the C2 channel.
 **MITRE ATT&CK:** `T1016` — System Network Configuration Discovery  
 **MITRE ATT&CK:** `T1016.001` — System Network Configuration Discovery: Internet
 Connection Discovery
+
+---
+<br><br><br>
+# Query 8: Defense Evasion — Directory Hiding
+
+A KQL query was executed against `DeviceProcessEvents` scoped to `azuki-fileserver01`,
+filtered to the window beginning at the confirmed logon time of `12:38 AM UTC on
+November 22, 2025`. The query filtered `ProcessCommandLine` for `attrib.exe` to
+identify any file or directory attribute manipulation performed by the attacker as
+part of their defense evasion routine on the file server.
+
+---
+
+## Key Findings
+
+The results confirm **one directory hiding command** was executed on
+`azuki-fileserver01` at **`12:55:43 AM UTC on November 22, 2025`** — approximately
+**17 minutes after the attacker's logon** at `12:38:49 AM UTC`:
+
+1. `12:55:43 AM UTC` — `"attrib.exe" +h +s C:\Windows\Logs\CBS`
+
+<img width="766" height="240" alt="image" src="https://github.com/user-attachments/assets/e78516b9-ecb0-4d16-a3f3-b0ae12c1d32f" />
+
+
+---
+
+## What This Reveals
+
+**`attrib +h +s`** — a native Windows command that sets two file system attributes
+simultaneously on the target path:
+- `+h` — marks the directory as **hidden**, removing it from standard Explorer and
+  `dir` listings
+- `+s` — marks the directory as a **system directory**, granting it additional
+  protection and further concealing it from casual inspection
+
+Together these flags make `C:\Windows\Logs\CBS` invisible to standard directory
+browsing and most automated file enumeration tools, while the directory and its
+contents remain fully accessible to the attacker.
+
+**Target path `C:\Windows\Logs\CBS`** — this is the exact staging directory the
+attacker created earlier using `xcopy.exe` to copy the contents of the file server
+shares. By the time this command was executed, the directory already contained staged
+copies of `Contracts`, `Financial`, `IT-Admin`, and `Shipping` share data. Hiding
+the directory after staging confirms the attacker was deliberately concealing the
+collected data from defenders and automated monitoring tools while preparing for
+exfiltration.
+
+**Execution timing** — this command was executed 15 minutes after the `xcopy` staging
+operations completed, placing it clearly within the post-collection, pre-exfiltration
+phase of the intrusion. The attacker staged the data, verified the staging directory
+contained the expected files, then hid it before activating the C2 channel for
+exfiltration.
+
+**Legitimate cover** — `C:\Windows\Logs\CBS` is a real Windows directory used by the
+Component Based Servicing engine for update logs. Using it as a staging path was a
+deliberate choice to blend in with legitimate system activity — a location that would
+appear unremarkable in a directory listing even if the hidden attribute were somehow
+bypassed.
+
+**MITRE ATT&CK:** `T1564.001` — Hide Artifacts: Hidden Files and Directories  
+**MITRE ATT&CK:** `T1074.001` — Data Staged: Local Data Staging
+
+---
+<br><br><br>
