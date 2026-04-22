@@ -158,3 +158,45 @@ credentials and are not subject to domain-level account monitoring policies.
 
 **MITRE ATT&CK:** `T1078.003` — Valid Accounts: Local Accounts  
 **MITRE ATT&CK:** `T1550.002` — Use Alternate Authentication Material: Pass the Hash
+
+---
+<br><br><br>
+# Query 5: Discovery — Network Share Enumeration
+
+A KQL query was executed against `DeviceProcessEvents` scoped to `azuki-fileserver01`
+under the compromised account `fileadmin`, filtered to the window beginning at the
+confirmed logon time of `12:38 AM UTC on November 22, 2025`. The query filtered
+`ProcessCommandLine` for the string `share` and projected `FileName` and
+`ProcessCommandLine`, sorted ascending by `TimeGenerated`. The goal was to identify
+whether the attacker enumerated local network shares on the file server following
+lateral movement, confirming the discovery phase of the intrusion.
+
+---
+
+## Key Findings
+
+The results confirm **one share enumeration command** was executed on
+`azuki-fileserver01` under `fileadmin` at **`12:40:54 AM UTC on November 22, 2025`**
+— approximately **two minutes after the attacker's logon** at `12:38:49 AM UTC:
+
+1. `12:40:54 AM UTC` — `"net.exe" share` executed directly under `fileadmin`
+
+The two-minute gap between logon and share enumeration is consistent with an attacker
+performing rapid manual reconnaissance immediately after gaining interactive access to
+the file server.
+
+<img width="790" height="270" alt="image" src="https://github.com/user-attachments/assets/f0dc81b6-ee88-42b9-bfce-74e488719607" />
+
+---
+
+## What This Reveals
+
+**`net.exe share`** — the native Windows command for listing all shared folders hosted
+on the local machine. Executing this immediately after logon is a textbook discovery
+action — the attacker was mapping what data repositories were available on
+`azuki-fileserver01` before deciding what to target for collection. 
+
+**MITRE ATT&CK:** `T1135` — Network Share Discovery  
+**MITRE ATT&CK:** `T1078.003` — Valid Accounts: Local Accounts
+
+---
