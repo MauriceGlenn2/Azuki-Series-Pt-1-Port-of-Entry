@@ -200,3 +200,47 @@ action — the attacker was mapping what data repositories were available on
 **MITRE ATT&CK:** `T1078.003` — Valid Accounts: Local Accounts
 
 ---
+<br><br><br>
+# Query 6: Discovery — Privilege Enumeration
+
+A KQL query was executed against `DeviceProcessEvents` scoped to `azuki-fileserver01`
+under the compromised account `fileadmin`, filtered to the window beginning at the
+confirmed logon time of `12:38 AM UTC on November 22, 2025`. The query filtered
+`ProcessCommandLine` for the strings `whoami`, `privilege`, and `groups` to identify
+any account and privilege enumeration activity performed by the attacker following
+lateral movement onto the file server.
+
+---
+
+## Key Findings
+
+The results confirm **one privilege enumeration command** was executed on
+`azuki-fileserver01` under `fileadmin` at **`12:42:24 AM UTC on November 22, 2025`**
+— approximately **four minutes after the attacker's logon** at `12:38:49 AM UTC`:
+
+1. `12:42:24 AM UTC` — `"whoami.exe" /all` executed under `fileadmin`
+
+<img width="778" height="240" alt="image" src="https://github.com/user-attachments/assets/fd33b297-c651-4a33-adf5-8071b640b53c" />
+
+---
+
+## What This Reveals
+
+**`whoami /all`** — the most comprehensive privilege enumeration command available
+natively on Windows. The `/all` flag returns the full token information for the current
+user including username, SID, group memberships, privileges, and logon attributes.
+Running this immediately after lateral movement is standard attacker behaviour —
+confirming what level of access the compromised credential actually carries on the
+new machine before proceeding with collection or persistence actions.
+
+**Execution at `12:42 AM`** — this places privilege enumeration as the third action
+taken by the attacker on `azuki-fileserver01`, following the RDP logon at `12:38 AM`
+and share enumeration via `net share` at `12:40 AM`. The consistent two-minute
+cadence between actions reinforces the pattern of a scripted or methodical intrusion
+sequence rather than opportunistic manu
+
+**MITRE ATT&CK:** `T1033` — System Owner/User Discovery  
+**MITRE ATT&CK:** `T1069.001` — Permission Groups Discovery: Local Groups
+
+---
+<br><br><br>
