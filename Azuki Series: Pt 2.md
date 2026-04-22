@@ -244,3 +244,53 @@ sequence rather than opportunistic manu
 
 ---
 <br><br><br>
+# Query 7: Discovery — Network Configuration Enumeration
+
+A KQL query was executed against `DeviceProcessEvents` scoped to `azuki-fileserver01`
+under the compromised account `fileadmin`, filtered to the window beginning at the
+confirmed logon time of `12:38 AM UTC on November 22, 2025`. The query filtered
+`ProcessCommandLine` for `ipconfig` to identify any network configuration enumeration
+performed by the attacker following lateral movement onto the file server.
+
+---
+
+## Key Findings
+
+The results confirm **one network configuration command** was executed on
+`azuki-fileserver01` under `fileadmin` at **`12:42:46 AM UTC on November 22, 2025`**
+— approximately **four minutes after the attacker's logon** at `12:38:49 AM UTC`:
+
+1. `12:42:46 AM UTC` — `"ipconfig.exe" /all` executed under `fileadmin`
+
+<img width="782" height="242" alt="image" src="https://github.com/user-attachments/assets/e3ed0170-0fb9-4dc0-a36f-542127d40330" />
+
+
+---
+
+## What This Reveals
+
+**`ipconfig /all`** — the most detailed network configuration command available
+natively on Windows. The `/all` flag returns full adapter information including IP
+addresses, subnet masks, default gateway, DNS servers, DHCP configuration, MAC
+addresses, and hostname. Running this immediately after lateral movement is standard
+attacker behaviour — mapping the network topology of the newly compromised host to
+identify additional targets, routing paths, and exfiltration options.
+
+**Execution at `12:42:46 AM`** — this places network enumeration as the fourth
+sequential action taken by the attacker on `azuki-fileserver01`, executed just
+**22 seconds after** `whoami /all` at `12:42:24 AM`. The tight sequencing of
+`whoami /all` followed immediately by `ipconfig /all` is a well-known attacker
+pattern — confirming account privileges then confirming network position in rapid
+succession as part of a structured post-exploitation checklist.
+
+**What the attacker learned** — the output of `ipconfig /all` on `azuki-fileserver01`
+would have confirmed the device's internal IP address of `10.1.0.188`, its subnet,
+DNS configuration, and any additional network interfaces. This information directly
+supports the subsequent C2 beacon activity observed from the same device — the
+`curl.exe` calls to `78.141.196.6:8880` include `ip=10.1.0.188` in the beacon
+parameters, confirming the attacker used the `ipconfig` output to populate their
+implant's host fingerprint before establishing the C2 channel.
+
+**MITRE ATT&CK:** `T1016` — System Network Configuration Discovery  
+**MITRE ATT&CK:** `T1016.001` — System Network Configuration Discovery: Internet
+Connection Discovery
