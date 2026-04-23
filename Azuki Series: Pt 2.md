@@ -574,5 +574,137 @@ legitimate HTTPS web activity.
 
 ---
 <br><br><br>
+# Query 12: Persistence — Registry Run Key
+
+A KQL query was executed against `DeviceRegistryEvents` scoped to `azuki-fileserver01`
+under the compromised account `fileadmin`, filtered to the window beginning at
+`12:38 AM UTC on November 22, 2025`. The query projected `TimeGenerated`,
+`ActionType`, `InitiatingProcessCommandLine`, and `RegistryValueName` to identify
+any registry modifications made by the attacker to establish persistence on the file
+server.
+
+---
+
+## Key Findings
+
+The results confirm **one registry persistence key was created** on
+`azuki-fileserver01` at **`2:10:50 AM UTC on November 22, 2025`** — approximately
+**92 minutes after the attacker's logon** at `12:38:49 AM UTC`:
+
+1. `2:10:50 AM UTC` — `RegistryValueSet` action under `fileadmin`
+   - **Key:** `HKLM\Software\Microsoft\Windows\CurrentVersion\Run`
+   - **Value name:** `FileShareSync`
+   - **Data:** `powershell -NoP -W Hidden -File C:\Windows\System32\svchost.ps1`
+
+<img width="1396" height="316" alt="image" src="https://github.com/user-attachments/assets/273cb15e-0e90-4b97-8562-3880ccf76524" />
+
+
+---
+
+## What This Reveals
+
+**`HKLM\...\CurrentVersion\Run`** — one of the most commonly abused registry
+locations for persistence. Any value set here executes automatically at system
+startup for all users. Writing to `HKLM` rather than `HKCU` requires administrator
+privileges, confirming `fileadmin` held local administrator rights on
+`azuki-fileserver01`.
+
+**Value name `FileShareSync`** — deliberately named to appear as a legitimate file
+synchronisation service, blending in with expected enterprise software entries in
+the Run key and reducing the likelihood of manual detection during routine
+administration.
+
+**Payload `powershell -NoP -W Hidden -File C:\Windows\System32\svchost.ps1`** —
+breaking down the flags:
+- `-NoP` — no profile, bypasses PowerShell profile-based detections
+- `-W Hidden` — runs the window hidden, no visible terminal appears on screen
+- `-File C:\Windows\System32\svchost.ps1` — executes a script named after the
+  legitimate `svchost.exe` Windows process, stored in `System32` to masquerade
+  as a native system file
+
+**`svchost.ps1` in `System32`** — placing a malicious PowerShell script in
+`C:\Windows\System32\` and naming it after one of the most common Windows processes
+is a deliberate masquerading technique. Casual inspection of running processes or
+startup entries would suggest a legitimate system component rather than attacker
+tooling.
+
+**Timing relative to collection** — this persistence mechanism was installed at
+`2:10 AM`, after all four file share staging operations completed and after the
+C2 beacon loop via `curl.exe` was already active. This confirms the attacker
+secured long-term access to `azuki-fileserver01` after completing the primary
+collection objective, ensuring they could return to the device even if the active
+RDP session was terminated or credentials were rotated.
+
+**MITRE ATT&CK:** `T1547.001` — Boot or Logon Autostart Execution: Registry Run Keys
+**MITRE ATT&CK:** `T1059.001` — Command and Scripting Interpreter: PowerShell
+**MITRE ATT&CK:** `T1036.005` — Masquerading: Match Legitimate Name or Location
+
+---
+<br><br><br>
+# Query 13: Anti-Forensics — History File Deletion
+
+A KQL query was executed against `DeviceFileEvents` scoped to `azuki-fileserver01`,
+filtered to the window beginning at `12:38 AM UTC on November 22, 2025`. The query
+filtered for `FileDeleted` action types and projected `TimeGenerated`, `ActionType`,
+`FileName`, `FolderPath`, and `InitiatingProcessCommandLine` to identify any
+deliberate file deletion activity performed by the attacker as part of their
+anti-forensics cleanup routine.
+
+---
+
+## Key Findings
+
+The results confirm **one history file was deleted** on `azuki-fileserver01` at
+**`2:26:01 AM UTC on November 22, 2025`** — approximately **108 minutes after the
+attacker's logon** at `12:38:49 AM UTC`:
+
+1. `2:26:01 AM UTC` — `ConsoleHost_history.txt` deleted by `powershell.exe`
+   - **File:** `ConsoleHost_history.txt`
+   - **Path:** `C:\Users\fileadmin\AppData\Roaming\Microsoft\Windows\PowerShell\PSReadLine\ConsoleHost_history.txt`
+   - **Initiating process:** `powershell.exe`
+
+<img width="1438" height="221" alt="image" src="https://github.com/user-attachments/assets/8ca3e11b-e8ec-4ced-967b-6aec221e7511" />
+
+
+---
+
+## What This Reveals
+
+**`ConsoleHost_history.txt`** — this is the **PowerShell command history file**.
+Every command typed interactively in a PowerShell session is automatically saved
+to this file by the PSReadLine module. It is the PowerShell equivalent of `.bash_history`
+on Linux — a complete record of every command the attacker typed during their
+interactive session on `azuki-fileserver01`.
+
+**What was destroyed** — the deleted history file would have contained a full
+record of every PowerShell command executed by the attacker under `fileadmin`
+during the intrusion, including commands used to:
+- Enumerate shares and network configuration
+- Stage data via `xcopy`
+- Download `ex.ps1` via `certutil`
+- Establish the registry persistence key
+- Interact with the C2 infrastructure
+
+**Initiating process `powershell.exe`** — the deletion was executed from within
+a PowerShell session, confirming the attacker ran a cleanup command directly
+before terminating their session. A common method is:
+
+```powershell
+Remove-Item (Get-PSReadLineOption).HistorySavePath
+```
+
+**Timing** — this deletion occurred at `2:26 AM`, after the registry persistence
+key was set at `2:10 AM` and after the C2 beacon loop was active. This places
+history deletion as one of the final cleanup actions before the attacker concluded
+their session, consistent with a structured anti-forensics routine performed in
+the intrusion's closing phase.
+
+**Investigative impact** — while the file was deleted, `DeviceFileEvents` telemetry
+captured the deletion event itself, preserving the forensic record that the cleanup
+occurred. The attacker removed the history file but could not remove the MDE log
+showing it was deleted — a common blind spot in attacker anti-forensics planning.
+
+**MITRE ATT&CK:** `T1070.003` — Indicator Removal: Clear Command History
+**MITRE ATT&CK:** `T1059.001` — Command and Scripting Interpreter: PowerShell
 
 
