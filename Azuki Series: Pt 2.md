@@ -640,6 +640,7 @@ RDP session was terminated or credentials were rotated.
 **MITRE ATT&CK:** `T1036.005` — Masquerading: Match Legitimate Name or Location
 
 ---
+
 <br><br><br>
 # Query 13: Anti-Forensics — History File Deletion
 
@@ -704,7 +705,71 @@ captured the deletion event itself, preserving the forensic record that the clea
 occurred. The attacker removed the history file but could not remove the MDE log
 showing it was deleted — a common blind spot in attacker anti-forensics planning.
 
+
 **MITRE ATT&CK:** `T1070.003` — Indicator Removal: Clear Command History
 **MITRE ATT&CK:** `T1059.001` — Command and Scripting Interpreter: PowerShell
+
+---
+<br><br><br>
+## Summary
+
+Following initial access on **November 19, 2025**, the attacker returned approximately
+72 hours later on **November 22, 2025**. Phase 2 covers the full intrusion chain from
+reconnection through to anti-forensics cleanup on the file server `azuki-fileserver01`,
+conducted entirely under the compromised account `fileadmin`.
+
+---
+
+## Timeline of Events — November 22, 2025
+
+| Time (UTC) | Stage | Activity |
+|---|---|---|
+| `12:27 AM` | Initial Access | Attacker reconnects to `azuki-sl` from `159.26.106.98` — device named `kali` |
+| `12:38 AM` | Lateral Movement | `fileadmin` logon to `azuki-fileserver01` from internal IP `10.1.0.204` |
+| `12:40 AM` | Discovery | `net share` executed — file server shares enumerated |
+| `12:42 AM` | Discovery | `whoami /all` executed — privilege level confirmed |
+| `12:42 AM` | Discovery | `ipconfig /all` executed — network configuration mapped |
+| `12:55 AM` | Defense Evasion | `attrib +h +s C:\Windows\Logs\CBS` — staging directory hidden |
+| `12:56 AM` | Defense Evasion | `certutil` downloads `ex.ps1` from C2 server `78.141.196.6:7331` |
+| `1:05 AM` | Collection | `xcopy` stages `Contracts` share → `C:\Windows\Logs\CBS\contracts` |
+| `1:06 AM` | Collection | `xcopy` stages `Financial` share → `C:\Windows\Logs\CBS\financial` |
+| `1:07 AM` | Collection | `xcopy` stages `IT-Admin` share → `C:\Windows\Logs\CBS\it-admin` |
+| `1:07 AM` | Collection | `IT-Admin-Passwords.csv` created — credential file discovered |
+| `1:20 AM` | Collection | `xcopy` stages `Shipping` share → `C:\Windows\Logs\CBS\shipping` |
+| `2:10 AM` | Persistence | Registry run key `FileShareSync` → `svchost.ps1` installed |
+| `2:11 AM` | C2 | `curl.exe` begins beaconing to `78.141.196.6:8880` — implant active |
+| `2:15 AM` | C2 | `netstat -ano | findstr 8880` — attacker verifies C2 port is live |
+| `2:25 AM` | Anti-Forensics | `wevtutil cl Microsoft-Windows-SMBServer/Security` — SMB log cleared |
+| `2:26 AM` | Anti-Forensics | `ConsoleHost_history.txt` deleted — PowerShell history destroyed |
+
+---
+
+## Key Indicators of Compromise
+
+| Indicator | Type | Detail |
+|---|---|---|
+| `159.26.106.98` | Attacker IP | External reconnection source — Kali Linux platform |
+| `78.141.196.6` | C2 Server | Beacon port `8880`, file delivery port `7331` |
+| `fileadmin` | Compromised Account | Local admin on `azuki-fileserver01` |
+| `azuki-fileserver01` | Compromised Device | Internal IP `10.1.0.188` |
+| `C:\Windows\Logs\CBS\` | Staging Directory | Hidden, system-flagged — contained all exfiltrated data |
+| `FileShareSync` | Persistence | Registry run key pointing to `svchost.ps1` |
+| `IT-Admin-Passwords.csv` | Credential File | IT admin passwords sourced from file share |
+| `lsass.dmp` | Credential Dump | Full memory dump of LSASS via renamed `pd.exe` |
+
+---
+
+## Data Exfiltrated
+
+- `C:\FileShares\Contracts`
+- `C:\FileShares\Financial`
+- `C:\FileShares\IT-Admin` — including `IT-Admin-Passwords.csv`
+- `C:\FileShares\Shipping`
+- `lsass.dmp` — full credential dump
+
+Exfiltration channels: C2 server `78.141.196.6:8880` and `file.io` one-time upload links.
+
+---
+
 
 
