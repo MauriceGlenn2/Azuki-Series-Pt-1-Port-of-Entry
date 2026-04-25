@@ -66,3 +66,4 @@ reused directly for RDP lateral movement — no brute force required.
 
 ---
 <br><br><br>
+azuki-fileserver01
