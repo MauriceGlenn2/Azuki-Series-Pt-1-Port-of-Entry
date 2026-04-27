@@ -191,3 +191,150 @@ such as QuickBooks and banking logins were expected to reside.
 - `T1003.001` — OS Credential Dumping: LSASS Memory  
 - `T1071.001` — Application Layer Protocol: Web Protocols *(Meterpreter C2)*  
 - `T1543` — Create or Modify System Process *(Persistence)*
+
+---
+<br><br><br>
+# Query 4: Persistence — Named Pipe (C2 Communication Channel)
+
+A KQL query was executed against `DeviceEvents` targeting `azuki-adminpc` on
+November 25, 2025, filtering for `NamedPipeEvent` action types initiated by
+`meterpreter.exe` where the account is not `system`. The goal was to identify
+the named pipe created by the Meterpreter C2 implant as part of its inter-process
+communication infrastructure following successful deployment on the CEO's workstation.
+
+---
+
+## Key Findings
+
+The results confirm two `NamedPipeEvent` entries on `azuki-adminpc` on November 25,
+2025, both initiated by `meterpreter.exe`. Both events show a `FileOperation` of
+`File created` with `NamedPipeEnd` set to `Server` — confirming Meterpreter created
+and was actively listening on these pipes for incoming C2 instructions.
+
+The `AdditionalFields` JSON column reveals the pipe names directly:
+
+<img width="1935" height="497" alt="image" src="https://github.com/user-attachments/assets/145ca169-60c5-4fe7-93ef-b227889b4646" />
+
+---
+
+## What Are Named Pipes and Why Do They Matter?
+
+Named pipes are a Windows inter-process communication (IPC) mechanism that allow
+two processes to exchange data through a named channel. Legitimate Windows services
+use named pipes constantly for normal operations — making them an attractive hiding
+place for attacker C2 traffic.
+
+Meterpreter uses named pipes to establish an encrypted communication channel between
+the implant on the victim machine and the attacker's C2 server. Because named pipe
+traffic can remain local or travel over SMB rather than a dedicated network port,
+it is significantly harder to detect than traditional socket-based C2 communication
+and can bypass network-level firewall rules.
+
+The prefix `msf-pipe-` is a well-known Metasploit Framework naming pattern — a
+strong behavioural indicator that confirms the tool in use is Metasploit's Meterpreter
+payload. This naming pattern is commonly flagged in threat intelligence feeds and
+endpoint detection rules as a direct indicator of compromise.
+
+---
+
+## MITRE ATT&CK
+
+- `T1071` — Application Layer Protocol *(C2 over named pipe)*  
+- `T1543` — Create or Modify System Process *(persistent implant)*  
+- `T1059.001` — Command and Scripting Interpreter: PowerShell
+
+---
+<br><br><br>
+# Query 5: Credential Access — Decoded Account Creation
+
+A KQL query was executed against `DeviceProcessEvents` targeting `azuki-adminpc` on
+November 25, 2025, filtering for PowerShell executions containing obfuscated or
+encoded input via `-EncodedCommand`, `-enc`, `-en`, `FromBase64String`, or
+`encodedcommand`. The goal was to identify malicious commands hidden behind Base64
+obfuscation, specifically targeting backdoor account creation activity following the
+deployment of the Meterpreter C2 implant.
+
+---
+
+## Key Findings
+
+The highlighted result at `4:51:08 AM UTC on November 25, 2025` reveals a PowerShell
+process executing a Base64 encoded command on `azuki-adminpc`:
+
+```
+"powershell.exe" -EncodedCommand bgBlAHQAIABsAG8AYwBhAGwAZwByAG8AdQBwACAAQWRtaW5pc3RyYXRvcnMAIAB5AHUAawBpAC4AdABhAG4AYQBrAGEAMgAgAC8AYQBkAGQA
+```
+
+<img width="1552" height="497" alt="image" src="https://github.com/user-attachments/assets/1ee9b94b-f985-4f6d-841a-f631f434af4f" />
+
+
+---
+
+## Decoded Command
+
+When the Base64 payload is decoded the true command is revealed:
+
+```
+net localgroup Administrators yuki.tanaka2 /add
+```
+
+
+## What the Attacker is Doing
+
+This command is **Step 2** of a two-step backdoor account creation sequence executed
+within seconds of each other:
+
+```
+4:51:08 AM  →  net user yuki.tanaka2 B@ckd00r2024! /add
+               CREATE the backdoor account with a known password
+
+4:51:23 AM  →  net localgroup Administrators yuki.tanaka2 /add
+               ELEVATE the backdoor account to full Administrator
+```
+
+By adding `yuki.tanaka2` to the local Administrators group, the attacker ensured
+their backdoor account had **full unrestricted access** to `azuki-adminpc` — including
+the ability to RDP back into the machine, access all files, modify system settings,
+and disable security controls.
+
+The account name `yuki.tanaka2` was deliberately chosen to mimic the legitimate
+compromised account `yuki.tanaka`, making it harder for administrators to spot
+the rogue account during a cursory review of user accounts on the machine.
+
+---
+
+## Why Base64 Obfuscation Was Used
+
+The attacker encoded both commands in Base64 rather than running them in plaintext
+for three key reasons:
+
+**Bypass string matching** — security tools and SIEM rules commonly scan
+`ProcessCommandLine` fields for keywords like `net user`, `localgroup`, `/add`,
+and `Administrators`. Base64 encoding completely hides these strings from basic
+detection rules, meaning the commands would not trigger standard alerts.
+
+**Evade log analysis** — a security analyst manually reviewing logs would see
+a long string of random-looking characters rather than an immediately recognisable
+account creation command, significantly reducing the chance of detection during
+a routine review.
+
+**Blend with legitimate activity** — PowerShell's `-EncodedCommand` flag is used
+regularly by legitimate system administrators and automation scripts, meaning its
+presence alone does not raise suspicion. The attacker exploited this to hide
+malicious commands in plain sight.
+
+This technique is classified under **T1027 — Obfuscated Files or Information**
+and is commonly used by advanced threat actors to extend their dwell time on
+compromised systems.
+
+---
+
+## MITRE ATT&CK
+
+- `T1136.001` — Create Account: Local Account  
+- `T1098` — Account Manipulation  
+- `T1027` — Obfuscated Files or Information *(Base64 encoded commands)*  
+- `T1059.001` — Command and Scripting Interpreter: PowerShell
+
+
+
