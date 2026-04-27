@@ -66,4 +66,14 @@ reused directly for RDP lateral movement — no brute force required.
 
 ---
 <br><br><br>
-azuki-fileserver01
+DeviceNetworkEvents
+| where DeviceName has_any ("azuki-sl", "azuki-fileserver01", "azuki-adminpc")
+| where TimeGenerated between (datetime(2025-11-18T00:00:00) .. datetime(2025-11-25T20:00:00))
+| where InitiatingProcessFileName in~ (
+    "powershell.exe", "certutil.exe", "curl.exe",
+    "wget.exe", "cmd.exe"
+  )
+| where RemoteUrl != ""
+| project TimeGenerated, RemoteUrl, RemoteIP, 
+    InitiatingProcessFileName, InitiatingProcessCommandLine
+| order by TimeGenerated asc
