@@ -66,14 +66,58 @@ reused directly for RDP lateral movement — no brute force required.
 
 ---
 <br><br><br>
-DeviceNetworkEvents
-| where DeviceName has_any ("azuki-sl", "azuki-fileserver01", "azuki-adminpc")
-| where TimeGenerated between (datetime(2025-11-18T00:00:00) .. datetime(2025-11-25T20:00:00))
-| where InitiatingProcessFileName in~ (
-    "powershell.exe", "certutil.exe", "curl.exe",
-    "wget.exe", "cmd.exe"
-  )
-| where RemoteUrl != ""
-| project TimeGenerated, RemoteUrl, RemoteIP, 
-    InitiatingProcessFileName, InitiatingProcessCommandLine
-| order by TimeGenerated asc
+# Query 2: Execution — Payload Hosting Service & Malware Download Command
+
+A KQL query was executed against `DeviceNetworkEvents` targeting `azuki-adminpc`
+across a broad timeframe (November 18–25, 2025), filtering for `curl.exe` as the
+initiating process with a non-empty `RemoteUrl`. The goal was to identify the external
+file hosting service used to stage malware during the attacker's execution phase, and
+to surface the exact download command used to retrieve the payload.
+
+
+---
+
+## Key Findings
+
+<img width="1904" height="350" alt="image" src="https://github.com/user-attachments/assets/fcfc1956-fc3c-440e-996b-10fcf4d7a857" />
+
+---
+
+| TimeGenerated [UTC]      | DeviceName    | RemoteUrl         | RemoteIP       | InitiatingProcess |
+|--------------------------|---------------|-------------------|----------------|-------------------|
+| 11/25/2025, 4:21:12 AM  | azuki-adminpc | litter.catbox.moe | 108.181.20.36  | curl.exe          |
+
+---
+
+## What This Reveals
+
+**`litter.catbox.moe`** — Catbox is a publicly accessible free file hosting service
+commonly abused by attackers to stage malware. It requires no account registration
+and files can be uploaded anonymously, making it attractive for staging payloads.
+
+**Infrastructure rotation confirmed** — in pt1/pt2 the attacker used `file.io` as
+their hosting service. In pt3 they switched to `litter.catbox.moe`, consistent with
+MITRE T1608.001 (Stage Capabilities) — rotating infrastructure to evade network
+blocks and threat intelligence feeds that may have flagged `file.io`.
+
+**KB filename masquerade** — the downloaded file was named `KB5044273-x64.7z`,
+mimicking a legitimate Microsoft Windows update package. This technique is designed
+to blend in with normal Windows Update activity and avoid raising suspicion during
+manual log review.
+
+**Hidden staging directory** — the file was saved to `C:\Windows\Temp\cache\`,
+a location that blends with legitimate Windows temporary files, making it harder
+to detect during routine file system inspection.
+
+**`wupdate.ps1` full attack chain** — the broader investigation of `wupdate.ps1`
+revealed the complete attacker playbook executed on `azuki-sl` on November 19, 2025:
+
+---
+
+## MITRE ATT&CK
+
+- `T1608.001` — Stage Capabilities: Upload Malware
+- `T1105` — Ingress Tool Transfer
+- `T1564.001` — Hide Artifacts: Hidden Files and Directories
+- `T1059.001` — Command and Scripting Interpreter: PowerShell
+- `T1218.011` — System Binary Proxy Execution: Certutil
