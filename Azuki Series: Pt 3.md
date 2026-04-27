@@ -121,3 +121,73 @@ revealed the complete attacker playbook executed on `azuki-sl` on November 19, 2
 - `T1564.001` — Hide Artifacts: Hidden Files and Directories
 - `T1059.001` — Command and Scripting Interpreter: PowerShell
 - `T1218.011` — System Binary Proxy Execution: Certutil
+
+---
+<br><br><br>
+# Query 3: Persistence — C2 Implant & Archive Extraction
+
+A KQL query was executed against `DeviceFileEvents` targeting `azuki-adminpc` on
+November 25, 2025, filtering for `FileCreated` action types where the filename
+contains `meterpreter.exe` and the initiating account is not `system`. The goal
+was to confirm the extraction of the malicious password-protected archive and
+identify the C2 implant dropped onto the CEO's administrative workstation following
+the attacker's lateral movement from `azuki-sl`.
+
+---
+
+## Key Findings
+
+The results confirm that `azuki-adminpc` was the affected device. At `4:21:33 AM UTC
+on November 25, 2025`, a `FileCreated` event was recorded for `meterpreter.exe` in
+`C:\Windows\Temp\cache\`, initiated directly by the 7-Zip extraction command. This
+confirms the malicious archive was successfully extracted and the C2 implant was
+deployed onto the machine.
+
+<img width="1666" height="427" alt="image" src="https://github.com/user-attachments/assets/9dd315a4-f9c2-4b29-a318-4ab71ea91a03" />
+
+---
+
+## Event Sequence
+
+At `4:21:12 AM UTC`, `curl.exe` contacted `litter.catbox.moe` and downloaded the
+password-protected archive `KB5044273-x64.7z` to `C:\Windows\Temp\cache\`. The file
+was disguised as a legitimate Microsoft Windows KB update package to blend in with
+normal Windows Update activity and avoid raising suspicion during manual log review.
+
+At `4:21:33 AM UTC`, `7z.exe` was invoked to silently extract the archive using a
+password and the `-y` flag to suppress all user prompts. The extraction command was:
+
+```
+"7z.exe" x C:\Windows\Temp\cache\KB5044273-x64.7z -p******** -oC:\Windows\Temp\cache\ -y
+```
+
+The password-protected nature of the archive is significant — encrypted `.7z` files
+cannot be inspected by antivirus engines, allowing all three malicious tools to bypass
+endpoint detection entirely until the moment of extraction.
+
+Three malicious tools were confirmed extracted to `C:\Windows\Temp\cache\`:
+
+- **`silentlynx.exe`** — a stealthy backdoor and Remote Access Trojan (RAT) designed
+to operate silently in the background, providing the attacker with persistent remote
+access to the machine even if other tools are discovered and removed.
+
+- **`meterpreter.exe`** — the advanced Metasploit Framework payload. Once executed,
+Meterpreter gives the attacker a fully encrypted, in-memory remote shell with
+capabilities including file upload and download, privilege escalation, keystroke
+logging, webcam access, credential harvesting, and lateral movement pivoting to
+other machines on the network.
+
+- **`m.exe`** — Mimikatz, the credential dumping tool previously seen in the
+`wupdate.ps1` attack chain on `azuki-sl`. Redeployed here on `azuki-adminpc` for
+further credential harvesting from the CEO's machine, where high-value credentials
+such as QuickBooks and banking logins were expected to reside.
+
+---
+
+## MITRE ATT&CK
+
+- `T1105` — Ingress Tool Transfer  
+- `T1027` — Obfuscated Files or Information *(password-protected archive)*  
+- `T1003.001` — OS Credential Dumping: LSASS Memory  
+- `T1071.001` — Application Layer Protocol: Web Protocols *(Meterpreter C2)*  
+- `T1543` — Create or Modify System Process *(Persistence)*
