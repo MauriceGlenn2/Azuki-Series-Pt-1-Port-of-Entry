@@ -336,5 +336,330 @@ compromised systems.
 - `T1027` — Obfuscated Files or Information *(Base64 encoded commands)*  
 - `T1059.001` — Command and Scripting Interpreter: PowerShell
 
+---
+<br><br><br>
+
+## Query 6: Discovery — Session Enumeration
+
+A KQL query was executed against `DeviceProcessEvents` targeting `azuki-adminpc` to identify session enumeration activity. The goal was to detect attacker use of built-in Windows tools to enumerate active sessions, users, and running processes.
+
+```kql
+DeviceProcessEvents
+| where TimeGenerated between (datetime(2025-11-25T00:00:00) .. datetime(2025-11-25T20:00:00))
+| where DeviceName has_any ("azuki-adminpc")
+| where ProcessCommandLine has_any ("qwinsta", "quser", "qprocess")
+| project TimeGenerated, ProcessCommandLine, InitiatingProcessCommandLine
+```
+
+### What This Reveals
+
+- `qwinsta` / `quser` — native Windows commands used to list active RDP/terminal sessions and logged-on users, commonly abused during post-exploitation to identify targets for lateral movement
+- `qprocess` — enumerates running processes across sessions, helping an attacker profile the environment before pivoting
+- Presence of these commands in sequence indicates structured discovery activity consistent with a hands-on-keyboard intrusion
+
+### MITRE ATT&CK
+
+- `T1033` — System Owner/User Discovery
+- `T1057` — Process Discovery
+- `T1049` — System Network Connections Discovery
+
+---
+<br><br><br>
+
+## Query 7: Discovery — Domain Trust Enumeration
+
+A KQL query was executed against `DeviceProcessEvents` targeting `azuki-adminpc` filtering for domain-related command-line activity. The goal was to identify attempts to enumerate domain trust relationships for lateral movement planning.
+
+```kql
+DeviceProcessEvents
+| where TimeGenerated between (datetime(2025-11-25T00:00:00) .. datetime(2025-11-25T20:00:00))
+| where DeviceName has_any ("azuki-adminpc")
+| where ProcessCommandLine has_any ("domain")
+| project TimeGenerated, ProcessCommandLine, InitiatingProcessCommandLine
+```
+
+### What This Reveals
+
+- Domain enumeration commands (e.g. `net group /domain`, `nltest /domain_trusts`) reveal attacker interest in the broader AD environment
+- Understanding domain structure is a prerequisite for lateral movement and privilege escalation across trust boundaries
+- Results here may surface tools or scripts performing AD reconnaissance
+
+### MITRE ATT&CK
+
+- `T1482` — Domain Trust Discovery
+- `T1069.002` — Permission Groups Discovery: Domain Groups
+
+---
+<br><br><br>
+
+## Query 8: Discovery — Network Connection Enumeration
+
+A KQL query was executed against `DeviceProcessEvents` targeting `azuki-adminpc` filtering for network enumeration utilities. The goal was to surface attacker mapping of the local network environment.
+
+```kql
+DeviceProcessEvents
+| where TimeGenerated between (datetime(2025-11-25T00:00:00) .. datetime(2025-11-25T20:00:00))
+| where DeviceName has_any ("azuki-adminpc")
+| where ProcessCommandLine has_any ("ipconfig", "arp", "netstat")
+| project TimeGenerated, ProcessCommandLine, InitiatingProcessCommandLine
+```
+
+### What This Reveals
+
+- `ipconfig` — reveals network adapter configuration, gateway, and DNS settings
+- `arp` — maps local ARP table to identify other hosts on the same subnet
+- `netstat` — exposes active connections and listening ports, useful for identifying C2 channels or lateral movement paths
+- Use of all three in combination is a strong indicator of systematic network reconnaissance
+
+### MITRE ATT&CK
+
+- `T1016` — System Network Configuration Discovery
+- `T1049` — System Network Connections Discovery
+
+---
+<br><br><br>
+
+## Query 9: Credential Access — Password Database Search (KeePass)
+
+A KQL query was executed against `DeviceProcessEvents` targeting `azuki-adminpc` filtering for `.kdbx` file references. The goal was to identify attacker interaction with KeePass password database files observed in earlier hunting phases.
+
+```kql
+DeviceProcessEvents
+| where TimeGenerated between (datetime(2025-11-25T00:00:00) .. datetime(2025-11-25T20:00:00))
+| where DeviceName has_any ("azuki-adminpc")
+| where ProcessCommandLine has_any ("kdbx")
+| project TimeGenerated, ProcessCommandLine, InitiatingProcessCommandLine
+```
+
+### What This Reveals
+
+- `.kdbx` is the KeePass password database format — any process referencing this extension is highly suspicious in a threat hunt context
+- Attacker access to a KeePass database could yield credentials for every system the victim had stored, enabling broad lateral movement
+- This query corroborates credential theft activity identified in earlier hunt phases
+
+### MITRE ATT&CK
+
+- `T1555.001` — Credentials from Password Stores: Keychain
+- `T1555` — Credentials from Password Stores
+
+---
+<br><br><br>
+
+## Query 10: Collection — Data Staging Directory
+
+A KQL query was executed against `DeviceFileEvents` targeting `azuki-adminpc` to identify files created in common attacker staging directories. The goal was to surface files being staged for exfiltration.
+
+```kql
+DeviceFileEvents
+| where TimeGenerated between (datetime(2025-11-25T00:00:00) .. datetime(2025-11-25T20:00:00))
+| where DeviceName has_any ("azuki-adminpc")
+| where FolderPath has_any ("temp", "programdata", "AppData")
+| where ActionType contains "FileCreated"
+| project TimeGenerated, ActionType, FileName, FolderPath
+```
+
+### What This Reveals
+
+- `C:\Windows\Temp`, `ProgramData`, and `AppData` are commonly abused by attackers to stage files outside of user-visible directories
+- File creation events in these paths during the hunt window may indicate data being assembled prior to compression and exfiltration
+- Correlates with archive file creation observed in Query 12
+
+### MITRE ATT&CK
+
+- `T1074.001` — Data Staged: Local Data Staging
+- `T1564.001` — Hide Artifacts: Hidden Files and Directories
+
+---
+<br><br><br>
+
+## Query 11: Collection — Automated Data Collection (Banking Records)
+
+A KQL query was executed against `DeviceProcessEvents` targeting `azuki-adminpc` filtering for file copy utilities. Banking records were observed being copied at approximately 04:37 UTC. The goal was to confirm automated bulk data collection activity.
+
+```kql
+DeviceProcessEvents
+| where TimeGenerated between (datetime(2025-11-25T00:00:00) .. datetime(2025-11-25T20:00:00))
+| where DeviceName has_any ("azuki-adminpc")
+| where ProcessCommandLine has_any ("xcopy", "robocopy", "copy")
+| project TimeGenerated, FileName, ProcessCommandLine
+```
+
+### What This Reveals
+
+- `xcopy` / `robocopy` / `copy` are native Windows utilities repurposed for bulk data theft — their use at 04:37 UTC outside business hours is a strong indicator of malicious intent
+- Banking records being targeted suggests financial data exfiltration as a primary objective
+- Commands of this type are often scripted, indicating the attacker used an automated playbook rather than manual copy
+
+### MITRE ATT&CK
+
+- `T1119` — Automated Collection
+- `T1005` — Data from Local System
+
+---
+<br><br><br>
+
+## Query 12: Collection — Exfiltration Volume (Archive Files)
+
+A KQL query was executed against `DeviceFileEvents` targeting `azuki-adminpc` to identify creation of compressed archive files. Only 8 archives were identified in the staging area. The goal was to quantify data staged for exfiltration.
+
+```kql
+DeviceFileEvents
+| where TimeGenerated between (datetime(2025-11-24T00:00:00) .. datetime(2025-11-25T20:00:00))
+| where DeviceName has_any ("azuki-adminpc")
+| where FileName endswith ".tar.gz"
+    or FileName endswith ".zip"
+    or FileName endswith ".7z"
+    or FileName endswith ".tar"
+    or FileName endswith ".rar"
+| where ActionType contains "FileCreated"
+| project TimeGenerated, FileName, FolderPath
+| order by TimeGenerated asc
+```
+
+### What This Reveals
+
+- 8 archive files created in the staging area confirm deliberate data packaging prior to exfiltration
+- Use of multiple archive formats (`.7z`, `.zip`, etc.) may indicate the attacker used different tools or scripts for different data sets
+- Timeline ordering reveals the sequence in which data was packaged, useful for reconstructing the full collection timeline
+
+### MITRE ATT&CK
+
+- `T1560.001` — Archive Collected Data: Archive via Utility
+- `T1074.001` — Data Staged: Local Data Staging
+
+---
+<br><br><br>
+
+## Query 13: Credential Access — Credential Theft Tool Download (litter.catbox.moe)
+
+A KQL query was executed against `DeviceProcessEvents` targeting `azuki-adminpc` filtering for download utility references to catbox and related hosting services. The goal was to confirm credential theft tooling was pulled from the attacker's infrastructure.
+
+```kql
+DeviceProcessEvents
+| where DeviceName == "azuki-adminpc"
+| where TimeGenerated between (datetime(2025-11-25T00:00:00) .. datetime(2025-11-25T20:00:00))
+| where ProcessCommandLine has_any ("catbox", "litter", "curl", "certutil", "wget")
+| where ProcessCommandLine !has "KB5044273"
+| project TimeGenerated, FileName, ProcessCommandLine
+| order by TimeGenerated asc
+```
+
+### What This Reveals
+
+- `litter.catbox.moe` is a public anonymous file hosting service previously identified in PT1/PT2 as the attacker's payload staging infrastructure
+- Excluding `KB5044273` filters out the earlier masqueraded Windows Update download, isolating credential theft tool downloads
+- Use of `certutil` and `curl` as LOLBins for downloading tooling is consistent with MITRE T1105
+
+### MITRE ATT&CK
+
+- `T1105` — Ingress Tool Transfer
+- `T1608.001` — Stage Capabilities: Upload Malware
+- `T1003` — OS Credential Dumping
+
+---
+<br><br><br>
+
+## Query 14: Credential Access — Browser Credential Theft
+
+A KQL query was executed against `DeviceProcessEvents` targeting `azuki-adminpc` filtering for browser-related process activity. Browser credential theft was observed at approximately 05:55 UTC. The goal was to identify tooling used to extract saved browser credentials.
+
+```kql
+DeviceProcessEvents
+| where DeviceName == "azuki-adminpc"
+| where TimeGenerated between (datetime(2025-11-25T00:00:00) .. datetime(2025-11-25T20:00:00))
+| where ProcessCommandLine has_any ("browser", "chrome", "m.exe")
+| project TimeGenerated, FileName, ProcessCommandLine
+| order by TimeGenerated asc
+```
+
+### What This Reveals
+
+- `m.exe` is a common naming convention for credential dumping tools targeting browser stores (e.g. Mimikatz derivatives, SharpChrome)
+- Chrome credential stores contain saved passwords, cookies, and session tokens — theft of these enables account takeover without needing plaintext passwords
+- Timestamp of 05:55 UTC places this activity after the banking record collection, suggesting a staged attack sequence
+
+### MITRE ATT&CK
+
+- `T1555.003` — Credentials from Password Stores: Credentials from Web Browsers
+- `T1539` — Steal Web Session Cookie
+
+---
+<br><br><br>
+
+## Query 15: Exfiltration — Data Upload Command
+
+A KQL query was executed against `DeviceProcessEvents` targeting `azuki-adminpc` filtering for `curl` usage. Data upload activity was observed at approximately 04:41 UTC. The goal was to confirm the command used to exfiltrate staged data.
+
+```kql
+DeviceProcessEvents
+| where DeviceName == "azuki-adminpc"
+| where TimeGenerated between (datetime(2025-11-25T00:00:00) .. datetime(2025-11-25T20:00:00))
+| where ProcessCommandLine has_any ("curl")
+| project TimeGenerated, FileName, ProcessCommandLine
+| order by TimeGenerated asc
+```
+
+### What This Reveals
+
+- `curl` used at 04:41 UTC confirms the upload command executed to transfer staged archives to the attacker's destination server
+- Use of a native or LOLBin download/upload utility avoids triggering AV signatures that would flag dedicated exfiltration tools
+- This timestamp anchors the exfiltration window within the broader attack timeline
+
+### MITRE ATT&CK
+
+- `T1048.003` — Exfiltration Over Alternative Protocol: Exfiltration Over Unencrypted Non-C2 Protocol
+- `T1041` — Exfiltration Over C2 Channel
+
+---
+<br><br><br>
+## Query 16: Exfiltration — Destination Server
+
+A KQL query was executed against `DeviceNetworkEvents` targeting `azuki-adminpc` filtering for connections to `store1.gofile.io`. The goal was to identify the attacker's exfiltration destination server.
+
+```kql
+DeviceNetworkEvents
+| where DeviceName == "azuki-adminpc"
+| where TimeGenerated between (datetime(2025-11-25T00:00:00) .. datetime(2025-11-25T20:00:00))
+| where InitiatingProcessCommandLine contains "https://store1.gofile.io/uploadFile"
+| project TimeGenerated, ActionType, RemoteIP, InitiatingProcessCommandLine
+```
+
+### What This Reveals
+
+- `gofile.io` is a public anonymous file sharing service — similar to catbox, it requires no authentication and makes attribution difficult
+- Use of `/uploadFile` API endpoint confirms programmatic upload rather than manual browser-based transfer
+- The destination IP corroborates exfiltration timing identified in Query 15 and closes the data transfer chain
+
+### MITRE ATT&CK
+
+- `T1567.002` — Exfiltration Over Web Service: Exfiltration to Cloud Storage
+- `T1102` — Web Service
+
+---
+<br><br><br>
+
+## Query 17: Credential Access — Master Password Extraction
+
+A KQL query was executed against `DeviceFileEvents` targeting `azuki-adminpc` filtering for files containing "password" created between November 19–25, 2025. The goal was to identify master password extraction activity tied to the KeePass database identified earlier.
+
+```kql
+DeviceFileEvents
+| where DeviceName == "azuki-adminpc"
+| where TimeGenerated between (datetime(2025-11-19T00:00:00) .. datetime(2025-11-25T20:00:00))
+| where FileName contains "password"
+| where ActionType contains "FileCreated"
+```
+
+### What This Reveals
+
+- File creation events with "password" in the filename over a multi-day window suggest the attacker dumped or exported credential material to disk
+- Combined with the KeePass `.kdbx` activity in Query 9, this indicates a full credential extraction chain: locate database → extract master password → access all stored credentials
+- The extended timeframe (Nov 19–25) suggests this activity may have begun earlier in the intrusion than the main hunt window
+
+### MITRE ATT&CK
+
+- `T1555.001` — Credentials from Password Stores: Keychain
+- `T1003` — OS Credential Dumping
+- `T1555` — Credentials from Password Stores
 
 
