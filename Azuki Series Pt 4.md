@@ -1,4 +1,4 @@
-# INCIDENT BRIEF - Azuki Import/Export - 梓貿易株式会社
+# INCIDENT BRIEF - Azuki Import/Export - 梓貿易株式会社 (WIP)
 
 📋 INCIDENT BRIEF - **The Azuki Breach Saga** - Final Chapter
 
@@ -123,3 +123,13 @@ DeviceProcessEvents
 ```
 
 ---
+🚩 FLAG 11: IMPACT - Service Stopped
+Stopping services takes effect immediately but does NOT survive a reboot.
+DeviceProcessEvents
+| where TimeGenerated between (datetime(2025-11-24T00:00:00) .. datetime(2025-11-26T00:00:00))
+| where AccountDomain contains "azuki-backupsrv"
+| where ProcessCommandLine has_any ("crontab", "cron.d", "cron.daily", "list-timers", "atq", "cron")
+| project TimeGenerated, FileName, ProcessCommandLine
+| order by TimeGenerated asc
+Flag Format: Full command line
+Question: What command stopped the backup service? systemctl stop cron
