@@ -1,4 +1,6 @@
 # Azuki-Series-Port-of-Entry
+<img width="1536" height="1024" alt="azuki" src="https://github.com/user-attachments/assets/db1ebda4-b6ef-492d-acb2-20623b82e859" />
+
 
 # 🔴 Incident Brief — Azuki Import/Export 梓貿易株式会社
 
